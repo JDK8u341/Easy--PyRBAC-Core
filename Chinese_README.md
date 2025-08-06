@@ -1,6 +1,8 @@
 一个由初中生编写的简单的RBAC核心
 
-```markdown
+## 注意，本项目仅建议用于学习
+
+```markdown   ”“减价
 # 权限管理审计系统文档
 
 ## 概述
@@ -9,10 +11,10 @@
 ## 核心组件
 
 ### 1. 日志与监控系统
-```python
+```python   ”“python   ”“python
 # 日志配置
-logger = logging.getLogger('security_audit')
-logger.setLevel(logging.INFO)
+logger = logging.getLogger('security_audit')日志记录器 = 日志记录模块.getLogger('安全审计日志记录器 = 日志记录模块.getLogger('安全审计
+logger.setLevel(logging.INFO)日志记录器设置为信息级别。日志记录器设置为信息级别。
 
 # Prometheus指标
 CMD_EXECUTED = Counter('cmd_executed', '执行的命令数量', ['cmd_name', 'status'])
@@ -20,8 +22,8 @@ PERM_CHANGES = Counter('perm_changes', '权限变更次数', ['action'])
 ```
 
 ### 2. 审计日志函数
-```python
-def audit_log(event_type, details, level=None):
+```python   ”“python
+def audit_log(event_type, details, level=None):def 审计日志(event_type, details, level=Nonedef 审计日志(event_type, details, level=None
     """记录结构化审计日志"""
     log_entry = {
         "timestamp": datetime.now().isoformat() + "Z",
@@ -31,7 +33,7 @@ def audit_log(event_type, details, level=None):
 ```
 
 ### 3. 权限检查接口
-```python
+```python   ”“python
 class PermissionChecker:
     def check(self, user, command) -> bool:
         """权限检查抽象方法"""
