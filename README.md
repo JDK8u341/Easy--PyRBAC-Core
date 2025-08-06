@@ -1,6 +1,6 @@
 
-### 一个由初中生编写的简单RBAC python实现
-## 仅建议您学习使用！
+## 一个由初中生编写的简单RBAC python实现,仅建议您学习使用
+
 ---
 
 #### **模块概述**
@@ -17,7 +17,7 @@
 
 #### **1. `PermissionChecker` 权限检查接口**
 ```python   ”“python   ```python
-"python"
+"python"   “巨蟒”
 ```
 class PermissionChecker:   经济舱PermissionChecker:   经济舱PermissionChecker:
     def check(self, user, command) -> bool:def 检查(self， 用户， 命令) -> booldef 检查(self， 用户， 命令) -> bool
