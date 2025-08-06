@@ -27,17 +27,29 @@ console_handler.setFormatter(logging.Formatter(
 ))
 logger.addHandler(console_handler)
 
-#辅助函数，写log的无情机器
-def audit_log(event_type, details,level=None):
-    log_entry = {
-        "timestamp": datetime.now().isoformat() + "Z",
-        "event_type": event_type,
-        **details
-    }
-    if level is None:
-        logger.info(json.dumps(log_entry))
-    else:
-        logger.error(json.dumps(log_entry))
+#辅助类，写log的无情机器
+class Logger:
+    __slots__ = ['_lock'] 
+    
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+
+    #辅助函数，写log的无情机器
+    def audit_log(self,event_type, details,level=None):
+        with self._lock:    #加锁
+            log_entry = {
+                "timestamp": datetime.now().isoformat() ,
+                "event_type": event_type,
+                **details
+            }
+            if level is None:
+                logger.info(json.dumps(log_entry))
+            else:
+                logger.error(json.dumps(log_entry))
+
+Loggers = Logger()  #不想改了就直接初始化了。。。
+
 
 class PermissionChecker:
     def check(self, user, command) -> bool:
@@ -122,7 +134,7 @@ class Command:
             exec_time = time.perf_counter() - start_time    #运行时间
             self.last_executed = datetime.now() #最后调用时间
             # 记录命令执行详情
-            audit_log("command_executed", {
+            Loggers.audit_log("command_executed", {
                 "user": getattr(self, '_last_user', 'system'),
                 "command": self.name,
                 "status": status,
@@ -144,7 +156,7 @@ class Terminal: #终端类
     def set_user(self,user):    #设置用户
         self.user = user    #平平无奇的设置(*/ω＼*)
         self.login_time = datetime.now()    #登寡郎，啊不对，登录时间设置q(≧▽≦q)
-        audit_log("user_session", {
+        Loggers.audit_log("user_session", {
             "event": "login",
             "user": user.name,
             "permissions": [p.name for p in user.permissions]
@@ -153,7 +165,7 @@ class Terminal: #终端类
     def run(self, command,*args):   #RUN！！！（兴奋）
         with self.__lock:  # 进锁，线程安全，with上下文
             if not self.user:
-                audit_log("security_alert", {
+                Loggers.audit_log("security_alert", {
                     "event": "unauthorized_access",
                     "message": "Command execution attempt without user context"
                 })  #没设置user写log然后报错╰（‵□′）╯（—---谁让你不设置的！）
@@ -169,7 +181,7 @@ class Terminal: #终端类
             else:
                 #否则，嘿嘿嘿┗|｀O′|┛（--老子直接TM给你拦下来）
                 missing_perms = set(p.name for p in command.need_permission) - set(p.name for p in self.user.permissions)   #还提示你少了哪些权限，这贴心度不给个五星好评对不起我ヾ(≧▽≦*)o
-                audit_log("permission_denied", {
+                Loggers.audit_log("permission_denied", {
                     "user": self.user.name,
                     "command": command.name,
                     "missing_permissions": list(missing_perms),
@@ -188,7 +200,7 @@ class Permission:   #权限类，你问我为啥不用str，因为清晰好用�
         # ref省内存我说了多少遍了，算了忘了o(〃＾▽＾〃)o
         self.command_refs = weakref.WeakSet()   #绑定的命令的ref
         self.created_at = datetime.now()    #创建时间啊啊啊
-        audit_log("permission_created", {
+        Loggers.audit_log("permission_created", {
             "permission": self.name,
             "uuid": str(self.__uuid)
         })  #继续报log
@@ -196,7 +208,7 @@ class Permission:   #权限类，你问我为啥不用str，因为清晰好用�
     def add_command(self, command):     #添加绑定的命令啊
         # 只存ref省内存
         self.command_refs.add(command)  #加他
-        audit_log("permission_assigned", {
+        Loggers.audit_log("permission_assigned", {
             "permission": self.name,
             "command": command.name
         })#报log
@@ -204,7 +216,7 @@ class Permission:   #权限类，你问我为啥不用str，因为清晰好用�
     def remove_command(self, command):  #移除啊！
         if command in self.command_refs:    #先判断在不在里面，不然报错就尴尬了O(∩_∩)O
             self.command_refs.remove(command)
-            audit_log("permission_revoked", {
+            Loggers.audit_log("permission_revoked", {
                 "permission": self.name,
                 "command": command.name
             })#继续让无情机器写log
@@ -228,11 +240,11 @@ class Manager:  #主管理器！
         self.permissions = weakref.WeakValueDictionary()    #又是ref，字典款ref，用来存需要管理的权限，你值得拥有(　o=^•ェ•)o　┏━┓
         self.roles = weakref.WeakValueDictionary()  #存角色的
         self.commands = weakref.WeakValueDictionary()   #存命令的
-        audit_log("system_event", {"event": "permission_manager_initialized"})#又TM写log
+        Loggers.audit_log("system_event", {"event": "permission_manager_initialized"})#又TM写log
 
     def config_permission(self, permission):    #配置一个权限
         self.permissions[permission.name] = permission  #加字典里，名字：实际对象
-        audit_log("permission_registered", {
+        Loggers.audit_log("permission_registered", {
             "permission": permission.name,
             "system": "global"
         })#还是写log
@@ -257,7 +269,7 @@ class Manager:  #主管理器！
 
     def config_role(self,role): #配置一下角色
         self.roles[role.name] = role    #设置，角色名：角色对象
-        audit_log("role_registered", {
+        Loggers.audit_log("role_registered", {
             "role": role.name,
             "system": "global"
         })#继续TMD写log
@@ -283,14 +295,14 @@ class Manager:  #主管理器！
                 raise ValueError(f"Permission {permission.name} not found")
             if isinstance(user_or_role,User):   #User执行User操作
                 user_or_role.add_permission(perm_obj)   #add
-                audit_log("permission_granted_user", {
+                Loggers.audit_log("permission_granted_user", {
                     "user": user_or_role.name,
                     "permission": permission.name,
                     "granted_by": "system"
                 })#提log
             elif isinstance(user_or_role,Role):     #Role执行role操作
                 user_or_role.add_permission(perm_obj)   #add
-                audit_log("permission_granted_role", {
+                Loggers.audit_log("permission_granted_role", {
                     "role": user_or_role.name,
                     "permission": permission.name,
                     "granted_by": "system"
@@ -300,7 +312,7 @@ class Manager:  #主管理器！
                     user.update()   #每个都更新一遍
             PERM_CHANGES.labels('grant').inc()  #提交一哈
         except Exception as e:
-            audit_log("permission_error", {
+            Loggers.audit_log("permission_error", {
                 "event": "grant_failed",
                 "user": user_or_role.name,
                 "permission": permission.name,
@@ -314,7 +326,7 @@ class Manager:  #主管理器！
             if perm_obj and perm_obj in user_or_role.permissions:
                 if isinstance(user_or_role, User):
                     user_or_role.remove_permission(perm_obj)#只有这里
-                    audit_log("permission_revoked_user", {
+                    Loggers.audit_log("permission_revoked_user", {
                         "user": user_or_role.name,
                         "permission": permission.name,
                         "revoked_by": "system"
@@ -322,7 +334,7 @@ class Manager:  #主管理器！
                     PERM_CHANGES.labels('revoke').inc()
                 elif isinstance(user_or_role, Role):
                     user_or_role.permissions.remove(perm_obj)#和这里
-                    audit_log("permission_revoked_role", {
+                    Loggers.audit_log("permission_revoked_role", {
                         "user": user_or_role.name,
                         "role": permission.name,
                         "revoked_by": "system"
@@ -332,7 +344,7 @@ class Manager:  #主管理器！
                         user.update()
                 PERM_CHANGES.labels('revoke').inc()
         except Exception as e:
-            audit_log("permission_error", {
+            Loggers.audit_log("permission_error", {
                 "event": "revoke_failed",
                 "user": user_or_role.name,
                 "permission": permission.name,
