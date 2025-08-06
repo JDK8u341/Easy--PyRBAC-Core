@@ -3,34 +3,36 @@ A simple RBAC core written by a junior high school student一个由初中生编�
 
 # Note: This document was translated from Chinese by AI and may contain some language errors
 
+## Please note that this project is only recommended for study
 
-```markdown
-# Permission Management Audit System Documentation
 
-## Overview
-This Python module implements a thread-safe permission management audit system, including user/role permission management, command execution auditing, logging, and Prometheus monitoring functionality.
+```markdown   ”“减价
+# Permission Management Audit System Documentation权限管理审计系统文档权限管理审计系统文档
 
-## Core Components
+## Overview   # #概述   # #概述
+This Python module implements a thread-safe permission management audit system, including user/role permission management, command execution auditing, logging, and Prometheus monitoring functionality.此 Python 模块实现了一个线程安全的权限管理审计系统，包括用户/角色权限管理、命令执行审计、日志记录以及 Prometheus 监控功能。此 Python 模块实现了一个线程安全的权限管理审计系统，包括用户/角色权限管理、命令执行审计、日志记录以及 Prometheus 监控功能。
 
-### 1. Logging and Monitoring System
+## Core Components   ##核心组件   ##核心组件
+
+### 1. Logging and Monitoring System### 1. 日志记录与监控系统### 1. 日志记录与监控系统
 ```python   ”“python   ”“python
-# Log configuration
-logger = logging.getLogger('security_audit')
-logger.setLevel(logging.INFO)
+# Log configuration   #日志配置   #日志配置
+logger = logging.getLogger('security_audit')日志记录器 = 日志记录模块.getLogger('安全审计日志记录器 = 日志记录模块.getLogger('安全审计
+logger.setLevel(logging.INFO)日志记录器设置为信息级别。日志记录器设置为信息级别。
 
-# Prometheus metrics
-CMD_EXECUTED = Counter('cmd_executed', 'Number of commands executed', ['cmd_name', 'status'])
-PERM_CHANGES = Counter('perm_changes', 'Number of permission changes', ['action'])
+# Prometheus metrics   # 普罗米修斯指标   # 普罗米修斯指标
+CMD_EXECUTED = Counter('cmd_executed', 'Number of commands executed', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])
+PERM_CHANGES = Counter('perm_changes', 'Number of permission changes', ['action'])PERM_CHANGES = Counter('perm_changes', '权限变更数量', ['action
 ```
 
-### 2. Audit Log Function
+### 2. Audit Log Function   ### 2.审计日志功能
 ```python   ”“python
-def audit_log(event_type, details, level=None):
+def audit_log(event_type, details, level=None):def 审计日志(event_type, details, level=None
     """Record structured audit logs"""
-    log_entry = {
-        "timestamp": datetime.now().isoformat() + "Z",
-        "event_type": event_type,
-        **details
+    log_entry = {   Log_entry = {
+        "timestamp": datetime.now().isoformat() + "Z","时间戳": datetime.now().isoformat() + "Z
+        "event_type": event_type,"事件类型": event_type
+        **details   * *细节
     }
 ```
 
