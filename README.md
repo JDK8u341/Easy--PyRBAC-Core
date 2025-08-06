@@ -1,4 +1,4 @@
-# Easy--PyRBAC-Core   #轻松——PyRBAC-Core   简单——PyRBAC-Core
+# Easy--PyRBAC-Core   
 A simple RBAC core written by a junior high school student一个由初中生编写的简单的基于角色的访问控制核心
 
 
@@ -11,7 +11,7 @@ This Python module implements a thread-safe permission management audit system, 
 ## Core Components
 
 ### 1. Logging and Monitoring System
-```python
+```python   ”“python   ”“python
 # Log configuration
 logger = logging.getLogger('security_audit')
 logger.setLevel(logging.INFO)
@@ -22,7 +22,7 @@ PERM_CHANGES = Counter('perm_changes', 'Number of permission changes', ['action'
 ```
 
 ### 2. Audit Log Function
-```python
+```python   ”“python
 def audit_log(event_type, details, level=None):
     """Record structured audit logs"""
     log_entry = {
@@ -33,12 +33,12 @@ def audit_log(event_type, details, level=None):
 ```
 
 ### 3. Permission Check Interface
-```python
+```python   ”“python
 class PermissionChecker:
     def check(self, user, command) -> bool:
         """Abstract method for permission checking"""
 
-class DefaultChecker(PermissionChecker):
+class DefaultChecker(PermissionChecker):经济舱DefaultChecker (PermissionChecker):
     def check(self, user, command):
         """Default implementation: Check if user permissions include required command permissions"""
         return required_perms.issubset(user_perms)
@@ -46,8 +46,8 @@ class DefaultChecker(PermissionChecker):
 
 ### 4. Core Data Models
 #### Role Model (Role)
-```python
-class Role:
+```python   ”“python
+class Role:   类角色:
     __slots__ = ["name", "permissions", "users", "__weakref__"]
     
     def add_permission(self, permission):
