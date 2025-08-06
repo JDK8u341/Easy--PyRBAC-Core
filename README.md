@@ -1,7 +1,7 @@
 # Easy--PyRBAC-Core   
 A simple RBAC core written by a junior high school student一个由初中生编写的简单的基于角色的访问控制核心
 
-# Note: This document was translated from Chinese by AI and may contain some language errors
+# Note: This document was translated from Chinese and may contain some language errors
 
 ## Please note that this project is only recommended for study
 
@@ -25,14 +25,25 @@ CMD_EXECUTED = Counter('cmd_executed', 'Number of commands executed', ['cmd_name
 PERM_CHANGES = Counter('perm_changes', 'Number of permission changes', ['action'])PERM_CHANGES = Counter('perm_changes', '权限变更数量', ['action
 ```
 
-### 2. Audit Log Function   ### 2.审计日志功能
+### 2. Audit Log Class   ### 2.审计日志功能
 ```python   ”“python
-def audit_log(event_type, details, level=None):def 审计日志(event_type, details, level=None
-    """Record structured audit logs"""
-    log_entry = {   Log_entry = {
-        "timestamp": datetime.now().isoformat() + "Z","时间戳": datetime.now().isoformat() + "Z
-        "event_type": event_type,"事件类型": event_type
-        **details   * *细节
+class Logger:
+    __slots__ = ['_lock'] 
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+    def audit_log(self,event_type, details,level=None):
+        with self._lock:    
+            log_entry = {
+                "timestamp": datetime.now().isoformat() ,
+                "event_type": event_type,
+                **details
+            }
+            if level is None:
+                logger.info(json.dumps(log_entry))
+            else:
+                logger.error(json.dumps(log_entry))
+
+Loggers = Logger() 
     }
 ```
 
