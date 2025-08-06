@@ -1,5 +1,5 @@
 
-## 一个由初中生编写的简单RBAC python实现,仅建议您学习使用
+### 一个由初中生编写的简单RBAC python实现,仅建议您学习使用
 
 ---
 
@@ -16,27 +16,23 @@
 ### **核心类说明**
 
 #### **1. `PermissionChecker` 权限检查接口**
-```python   ”“python   ```python
-"python"   “巨蟒”
-```
-class PermissionChecker:   经济舱PermissionChecker:   经济舱PermissionChecker:
-    def check(self, user, command) -> bool:def 检查(self， 用户， 命令) -> booldef 检查(self， 用户， 命令) -> bool
+```python
+class PermissionChecker:
+    def check(self, user, command) -> bool:
 ```
 - **功能**：验证用户是否有权限执行命令
 - **参数**：
-  - `user   用户`：用户对象
-  - `command   命令`：命令对象
-- **返回值**：`True   真正的` 有权限，`False   假` 无权限
+  - `user`：用户对象
+  - `command`：命令对象
+- **返回值**：`True` 有权限，`False` 无权限
 - **实现类**：`DefaultChecker`（默认检查器）
 
-#### **2. `Role   角色` 角色管理类**
-```python   ”“python   ```python
-"python"
-```
-class Role:   类角色:   类角色:
+#### **2. `Role` 角色管理类**
+```python
+class Role:
     def __init__(self, name, *init_permissions):
-    def add_permission(self, permission):def self.add_permission(权限def self.add_permission(权限
-    def remove_permission(self, permission):def 移除权限(self， 权限def 移除权限(self， 权限
+    def add_permission(self, permission):
+    def remove_permission(self, permission):
 ```
 - **属性**：
   - `name`：角色名称
@@ -147,7 +143,7 @@ PERM_CHANGES = Counter('perm_changes', '权限变更次数', ['action'])
 
 ### **使用示例**
 #### 1. 初始化系统
-```python   ”“python
+```python
 checker = DefaultChecker()
 manager = Manager()
 terminal = Terminal(manager, checker)
@@ -165,7 +161,7 @@ manager.config_role(admin_role)
 ```
 
 #### 3. 注册命令
-```python   ”“python
+```python
 def data_export():
     print("Exporting data...")
 
@@ -174,15 +170,15 @@ manager.add_command(export_cmd, read_perm)  # 关联读取权限
 ```
 
 #### 4. 用户与权限管理
-```python   ”“python
+```python
 user = User("Alice", "secure_pwd")
 manager.add_user_to_role(user, "admin")  # 赋予管理员角色
-terminal.set_user(user)   终端设置用户为 user 。
+terminal.set_user(user)
 user.login("secure_pwd")  # 登录认证
 ```
 
 #### 5. 执行命令
-```python   ”“python
+```python
 try:
     terminal.run(export_cmd)  # 成功执行
 except PermissionError as e:
@@ -193,7 +189,7 @@ except PermissionError as e:
 
 ### **注意事项**
 1. **线程安全**：
-   - 关键操作使用 `threading.RLock   线程。RLock` 锁
+   - 关键操作使用 `threading.RLock` 锁
    - 日志记录器内置线程锁
 
 2. **内存优化**：
