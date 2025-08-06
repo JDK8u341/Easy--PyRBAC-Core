@@ -1,5 +1,6 @@
-### `permission.py` 详细文档
 
+###一个由初中生编写的简单RBAC python实现
+##仅建议您学习使用！
 ---
 
 #### **模块概述**
@@ -15,23 +16,23 @@
 ### **核心类说明**
 
 #### **1. `PermissionChecker` 权限检查接口**
-```python
-class PermissionChecker:
-    def check(self, user, command) -> bool:
+```python   ”“python
+class PermissionChecker:   经济舱PermissionChecker:   经济舱PermissionChecker:
+    def check(self, user, command) -> bool:def 检查(self， 用户， 命令) -> booldef 检查(self， 用户， 命令) -> bool
 ```
 - **功能**：验证用户是否有权限执行命令
 - **参数**：
   - `user`：用户对象
   - `command`：命令对象
-- **返回值**：`True` 有权限，`False` 无权限
+- **返回值**：`True` 有权限，`False   假` 无权限
 - **实现类**：`DefaultChecker`（默认检查器）
 
-#### **2. `Role` 角色管理类**
-```python
-class Role:
+#### **2. `Role   角色` 角色管理类**
+```python   ”“python
+class Role:   类角色:   类角色:
     def __init__(self, name, *init_permissions):
-    def add_permission(self, permission):
-    def remove_permission(self, permission):
+    def add_permission(self, permission):def self.add_permission(权限def self.add_permission(权限
+    def remove_permission(self, permission):def 移除权限(self， 权限def 移除权限(self， 权限
 ```
 - **属性**：
   - `name`：角色名称
