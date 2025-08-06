@@ -21,14 +21,23 @@ CMD_EXECUTED = Counter('cmd_executed', '执行的命令数量', ['cmd_name', 'st
 PERM_CHANGES = Counter('perm_changes', '权限变更次数', ['action'])
 ```
 
-### 2. 审计日志函数
+### 2. 审计日志类
 ```python   ”“python
-def audit_log(event_type, details, level=None):def 审计日志(event_type, details, level=Nonedef 审计日志(event_type, details, level=None
-    """记录结构化审计日志"""
-    log_entry = {
-        "timestamp": datetime.now().isoformat() + "Z",
-        "event_type": event_type,
-        **details
+class Logger:
+    __slots__ = ['_lock'] 
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+    def audit_log(self,event_type, details,level=None):
+        with self._lock:    #加锁
+            log_entry = {
+                "timestamp": datetime.now().isoformat() ,
+                "event_type": event_type,
+                **details
+            }
+            if level is None:
+                logger.info(json.dumps(log_entry))
+            else:
+                logger.error(json.dumps(log_entry))
     }
 ```
 
