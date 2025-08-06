@@ -1,215 +1,207 @@
-# Easy--PyRBAC-Core   
-A simple RBAC core written by a junior high school student一个由初中生编写的简单的基于角色的访问控制核心
+### `permission.py` 详细文档
 
-# Note: This document was translated from Chinese and may contain some language errors
+---
 
-## Please note that this project is only recommended for study
+#### **模块概述**
+该模块实现了一个细粒度的权限管理系统，包含用户/角色管理、权限分配、命令执行审计等功能。核心特性包括：
+- 基于角色的权限控制（RBAC）
+- 命令执行审计与安全日志
+- Prometheus 监控指标集成
+- 线程安全设计
+- 弱引用优化内存管理
 
+---
 
-```markdown   ”“减价
-# Permission Management Audit System Documentation权限管理审计系统文档权限管理审计系统文档
+### **核心类说明**
 
-## Overview   # #概述   # #概述
-This Python module implements a thread-safe permission management audit system, including user/role permission management, command execution auditing, logging, and Prometheus monitoring functionality.此 Python 模块实现了一个线程安全的权限管理审计系统，包括用户/角色权限管理、命令执行审计、日志记录以及 Prometheus 监控功能。此 Python 模块实现了一个线程安全的权限管理审计系统，包括用户/角色权限管理、命令执行审计、日志记录以及 Prometheus 监控功能。
-
-## Core Components   ##核心组件   ##核心组件
-
-### 1. Logging and Monitoring System### 1. 日志记录与监控系统### 1. 日志记录与监控系统
-```python   ”“python   ”“python
-# Log configuration   #日志配置   #日志配置
-logger = logging.getLogger('security_audit')日志记录器 = 日志记录模块.getLogger('安全审计日志记录器 = 日志记录模块.getLogger('安全审计
-logger.setLevel(logging.INFO)日志记录器设置为信息级别。日志记录器设置为信息级别。
-
-# Prometheus metrics   # 普罗米修斯指标   # 普罗米修斯指标
-CMD_EXECUTED = Counter('cmd_executed', 'Number of commands executed', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])CMD_EXECUTED = 计数器('cmd_executed', '已执行命令的数量', ['cmd_name', 'status'])
-PERM_CHANGES = Counter('perm_changes', 'Number of permission changes', ['action'])PERM_CHANGES = Counter('perm_changes', '权限变更数量', ['action
-```
-
-### 2. Audit Log Class   ### 2.审计日志功能
-```python   ”“python
-class Logger:
-    __slots__ = ['_lock'] 
-    def __init__(self) -> None:
-        self._lock = threading.RLock()
-    def audit_log(self,event_type, details,level=None):
-        with self._lock:    
-            log_entry = {
-                "timestamp": datetime.now().isoformat() ,
-                "event_type": event_type,
-                **details
-            }
-            if level is None:
-                logger.info(json.dumps(log_entry))
-            else:
-                logger.error(json.dumps(log_entry))
-
-Loggers = Logger() 
-    }
-```
-
-### 3. Permission Check Interface
-```python   ”“python
+#### **1. `PermissionChecker` 权限检查接口**
+```python
 class PermissionChecker:
     def check(self, user, command) -> bool:
-        """Abstract method for permission checking"""
-
-class DefaultChecker(PermissionChecker):经济舱DefaultChecker (PermissionChecker):
-    def check(self, user, command):
-        """Default implementation: Check if user permissions include required command permissions"""
-        return required_perms.issubset(user_perms)
 ```
+- **功能**：验证用户是否有权限执行命令
+- **参数**：
+  - `user`：用户对象
+  - `command`：命令对象
+- **返回值**：`True` 有权限，`False` 无权限
+- **实现类**：`DefaultChecker`（默认检查器）
 
-### 4. Core Data Models
-#### Role Model (Role)
-```python   ”“python
-class Role:   类角色:
-    __slots__ = ["name", "permissions", "users", "__weakref__"]
-    
+#### **2. `Role` 角色管理类**
+```python
+class Role:
+    def __init__(self, name, *init_permissions):
     def add_permission(self, permission):
     def remove_permission(self, permission):
-    def add_user(self, user):
-    def remove_user(self, user):
 ```
+- **属性**：
+  - `name`：角色名称
+  - `permissions`：角色权限列表
+  - `users`：关联用户（弱引用集合）
+- **方法**：
+  - `add_user(user)`/`remove_user(user)`：关联/解绑用户
+  - 权限操作自动更新关联用户
 
-#### User Model (User)
+#### **3. `User` 用户管理类**
 ```python
 class User:
-    __slots__ = ["name", "role", "permissions", "__weakref__"]
-    
+    def __init__(self, name: str, password:str, role=None):
+    def login(self, password):
+    def leave(self):
     def update(self):
-    def add_permission(self, permission):
-    def remove_permission(self, permission):
-    def set_role(self, role):
 ```
+- **属性**：
+  - `password`：哈希存储的密码
+  - `is_login`：登录状态标识
+  - `permissions`：权限集合（继承角色+单独授权）
+- **安全特性**：
+  - `login()` 验证密码并记录审计日志
+  - `update()` 自动同步角色权限变更
 
-#### Command Model (Command)
+#### **4. `Command` 命令执行类**
 ```python
 class Command:
-    __slots__ = ["name", "func", "need_permission", "last_executed", "_last_user", "__weakref__"]
-    
+    def __init__(self, name, func):
     def run(self, *args):
-        """Execute command and record audit log"""
 ```
+- **属性**：
+  - `need_permission`：所需权限列表
+  - `last_executed`：最后执行时间
+- **方法**：
+  - `run()`：执行命令并记录：
+    - 执行耗时
+    - 执行状态（success/error）
+    - 权限使用情况
 
-#### Permission Model (Permission)
-```python
-class Permission:
-    __slots__ = ["name", "__uuid", "command_refs", "created_at", "__weakref__"]
-    
-    def add_command(self, command):
-    def remove_command(self, command):
-    def __eq__(self, other):
-        """Dual validation based on name and UUID"""
-```
-
-### 5. Terminal System (Terminal)
+#### **5. `Terminal` 终端控制类**
 ```python
 class Terminal:
-    __slots__ = ["user", "manager", "__lock", "checker", "login_time"]
-    
     def set_user(self, user):
     def run(self, command, *args):
-        """Execute command with permission check"""
 ```
+- **核心流程**：
+  1. 通过 `set_user()` 绑定用户
+  2. `run()` 执行命令前检查：
+     - 用户登录状态
+     - 命令执行权限
+     - 自动记录 Prometheus 指标
+- **安全机制**：
+  - 线程锁保证操作原子性
+  - 未授权访问触发安全警报日志
 
-### 6. Central Manager (Manager)
+#### **6. `Permission` 权限实体类**
+```python
+class Permission:
+    def __init__(self, name):
+    def add_command(self, command):
+    def remove_command(self, command):
+```
+- **安全特性**：
+  - 内置 UUID 防伪造
+  - 弱引用关联命令对象
+- **审计**：
+  - 权限创建/分配/回收均记录审计日志
+
+#### **7. `Manager` 系统管理中枢**
 ```python
 class Manager:
-    __slots__ = ["permissions", "roles", "commands", "__weakref__"]
-    
-    # Permission management
     def config_permission(self, permission):
     def add_command(self, command, permission):
-    def remove_command(self, command, permission):
-    
-    # Role management
-    def config_role(self, role):
-    def add_user_to_role(self, user, role_name):
-    def remove_user_to_role(self, user, role_name):
-    
-    # Permission operations
-    def issue(self, user_or_role, permission):  # Grant permission
-    def relieve(self, user_or_role, permission): # Revoke permission
+    def issue(self, user_or_role, permission):
+    def relieve(self, user_or_role, permission):
 ```
+- **核心功能**：
+  - `issue()`/`relieve()`：权限授予/回收
+  - 支持用户或角色级授权
+  - 权限变更自动同步用户状态
+- **对象管理**：
+  - 全局管理权限/角色/命令对象
+  - 弱引用字典存储优化内存
 
-## System Features
+---
 
-1. **Thread-Safe Design**
-   - Uses `threading.RLock` to ensure thread safety during command execution
-   - Weak references (`weakref`) prevent memory leaks
-
-2. **Audit Trail**
-   - Structured JSON logs for all key operations
-   - Command execution details (user, status, duration)
-   - Permission change history (grant/revoke)
-
-3. **Permission Verification**
-   - Dual validation using UUID + name
-   - Dynamic role permission updates
-   - Detailed permission deficiency reporting
-
-4. **Monitoring Integration**
-   - Prometheus metrics:
-     - `cmd_executed`: Command execution statistics
-     - `perm_changes`: Permission change statistics
-   - HTTP service port: 8000
-
-5. **Memory Optimization**
-   - `__slots__` reduce memory footprint
-   - Weak reference sets prevent circular references
-   - On-demand loading design
-
-## Usage Example
-
+### **监控与审计**
+#### **Prometheus 指标**
 ```python
-# Initialize system
-C = DefaultChecker()
-PM = Manager()
-terminal = Terminal(PM, C)
+CMD_EXECUTED = Counter('cmd_executed', '执行的命令数量', ['cmd_name', 'status'])
+PERM_CHANGES = Counter('perm_changes', '权限变更次数', ['action'])
+```
+- 指标类型：
+  1. 命令执行统计（按状态分类）
+  2. 权限变更次数（grant/revoke）
 
-# Create permission
-P = Permission('file_delete')
+#### **审计日志类型**
+| 事件类型 | 触发场景 | 关键字段 |
+|----------|----------|----------|
+| `command_executed` | 命令执行 | 用户、状态、耗时、权限 |
+| `permission_denied` | 权限拒绝 | 缺失权限、用户现有权限 |
+| `permission_granted_*` | 权限授予 | 目标（用户/角色）、权限名 |
+| `user_session` | 用户登录 | 用户、权限列表 |
+| `security_alert` | 安全事件 | 未授权访问告警 |
 
-# Create command
-def delete_file():
-    print("Deleting file...")
-del_cmd = Command('delete', delete_file)
+---
 
-# Configure permission
-PM.config_permission(P)
-PM.add_command(del_cmd, P)
-
-# Create user and role
-admin_role = Role('Admin', P)
-user = User('Alice')
-terminal.set_user(user)
-
-# Permission testing
-terminal.run(del_cmd)  # Fails (no permission)
-PM.issue(user, P)      # Grant permission
-terminal.run(del_cmd)  # Succeeds
+### **使用示例**
+#### 1. 初始化系统
+```python   ”“python
+checker = DefaultChecker()
+manager = Manager()
+terminal = Terminal(manager, checker)
 ```
 
-## Audit Log Example
-```json
-{
-  "timestamp": "2023-10-05T12:34:56.789Z",
-  "event_type": "command_executed",
-  "user": "Alice",
-  "command": "delete",
-  "status": "success",
-  "execution_time": "0.0023s",
-  "permissions": ["file_delete"]
-}
+#### 2. 创建权限与角色
+```python
+read_perm = Permission("read_data")
+write_perm = Permission("write_data")
+manager.config_permission(read_perm)
+manager.config_permission(write_perm)
+
+admin_role = Role("admin", read_perm, write_perm)
+manager.config_role(admin_role)
 ```
 
-## Monitoring Metrics
-- `cmd_executed{cmd_name="delete", status="success"} 1`
-- `perm_changes{action="grant"} 1`
+#### 3. 注册命令
+```python   ”“python
+def data_export():
+    print("Exporting data...")
 
-## Important Notes
-1. Call `user.update()` after permission changes to synchronize state
-2. Command execution must go through `Terminal.run()` for audit compliance
-3. Manage lifecycle carefully for weak-referenced objects
-4. Log files auto-generated at `security.json.log`
+export_cmd = Command("export", data_export)
+manager.add_command(export_cmd, read_perm)  # 关联读取权限
 ```
+
+#### 4. 用户与权限管理
+```python   ”“python
+user = User("Alice", "secure_pwd")
+manager.add_user_to_role(user, "admin")  # 赋予管理员角色
+terminal.set_user(user)   终端设置用户为 user 。
+user.login("secure_pwd")  # 登录认证
+```
+
+#### 5. 执行命令
+```python   ”“python
+try:
+    terminal.run(export_cmd)  # 成功执行
+except PermissionError as e:
+    print(f"执行失败: {e}")
+```
+
+---
+
+### **注意事项**
+1. **线程安全**：
+   - 关键操作使用 `threading.RLock   线程。RLock` 锁
+   - 日志记录器内置线程锁
+
+2. **内存优化**：
+   - 广泛使用 `weakref` 避免循环引用
+   - `__slots__` 减少内存占用
+
+3. **安全特性**：
+   - 密码哈希存储
+   - 权限 UUID 防伪造
+   - 未登录用户禁止操作
+
+4. **监控接入**：
+   - Prometheus 服务端口：8000
+   - 日志路径：`./security.json.log`
+
+> 通过 `if __name__ == '__main__':` 的测试代码可快速验证全流程功能
