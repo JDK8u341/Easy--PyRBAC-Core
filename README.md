@@ -1,2 +1,2 @@
 # Easy--PyRBAC-Core
-A junior high school student has nothing to write about RBAC core
+A simple RBAC core written by a junior high school student
