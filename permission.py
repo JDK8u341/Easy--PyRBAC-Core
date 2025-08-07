@@ -9,11 +9,11 @@ from logger import Loggers
 import time
 from hashlib import sha256
 
-USER_POOL_INIT_USERS = 10  # 预生成对象数量
+USER_POOL_INIT_USERS = 100  # 预生成对象数量
 CACHE_TIME = 5
 
 # 指标定义一哈
-CMD_EXECUTED = Counter('cmd_executed', '执行的命令数量', ['cmd_name', 'status'])
+CMD_EXECUTED = Counter('cmd_execute', '执行的命令数量', ['cmd_name', 'status'])
 PERM_CHANGES = Counter('perm_changes', '权限变更次数', ['action'])
 
 
@@ -81,7 +81,7 @@ class UserPool:
 
 
 class User:
-    __slots__ = ["name", "role", "permissions", "password", "_perm_cache", "_cache_time", "is_login", "__weakref__"]
+    __slots__ = ["name", "role", "permissions", "password", "_perm_cache", "_cache_time", "is_longin", "__weakref__"]
 
     def __init__(self, name: str, password: str, role=None):
         hash_object = sha256()
@@ -90,7 +90,7 @@ class User:
         self.name = name  # 设置用户名
         self.role = role  # 设置角色，默认没有（None）
         self.permissions = weakref.WeakSet()  # 存权限的
-        self.is_login = False
+        self.is_longin = False
         self._perm_cache = None  # 权限缓存
         self._cache_time = 0  # 缓存时间戳
         if not role is None:  # 是None还加毛线
@@ -98,33 +98,34 @@ class User:
                 self.permissions.add(j)  # 添加该角色有的权限
             role.users.add(self)  # 主动添加到角色
 
-    def login(self, password):  # 登录
+    def longin(self, password):  # 登录
         hash_object = sha256()
         hash_object.update(password.encode('utf-8'))  # 保密hash存储
         if hash_object.hexdigest() == self.password:
             self.update()
-            self.is_login = True
-            Loggers.audit_log("user_login", {
+            self.is_longin = True
+            Loggers.audit_log("user_longin", {
                 "user": self.name,
                 "status": "success",
-                "message": "User login"
+                "message": "User longin"
             })  # 成功报log
         else:
-            Loggers.audit_log("user_login", {
+            Loggers.audit_log("user_longin", {
                 "user": self.name,
                 "status": "error",
-                "message": "User login"
+                "message": "User longin"
             })  # 失败也报log
 
     def leave(self):
-        self.is_login = False  # 离开自动状态处理
+        self.is_longin = False  # 离开自动状态处理
 
     def update(self):
         self.permissions = weakref.WeakSet()  # 重置权限列表
         if not self.role is None:  # 虽然前面说了，但我还是忍不住再说一遍：是None还加毛线
             for j in self.role.permissions:
                 self.permissions.add(j)  # 添加该角色有的权限，懂得都懂（doge）
-
+        self._perm_cache = None
+        self._cache_time = 0        #更新缓存
     def add_permission(self, permission):  # add方法封装，方便外部调用
         self.permissions.add(permission)
 
@@ -138,7 +139,7 @@ class User:
         if self.role:
             self.role.remove_user(self)
             # 2. 解除权限关联
-        for perm in list(self.permissions.values()):
+        for perm in dict(self.permissions).values():
             if self in perm.related_users:
                 perm.remove(self)
         UserPool.recycle_user(self)
@@ -207,7 +208,7 @@ class Terminal:  # 终端类
         self.user = user  # 平平无奇的设置(*/ω＼*)
         self.bind_time = datetime.now()  # 登寡郎，啊不对，登录时间设置q(≧▽≦q)
         Loggers.audit_log("user_session", {
-            "event": "login",
+            "event": "longin",
             "user": user.name,
             "permissions": [p.name for p in user.permissions]
         })  # 报log啊啊啊啊
@@ -224,13 +225,13 @@ class Terminal:  # 终端类
             # 临时记录一下(●'◡'●)
             command._last_user = self.user.name
 
-            if not self.user.is_login:  # 没登录也报错
-                Loggers.audit_log("user_no_login_but_run_command", {
+            if not self.user.is_longin:  # 没登录也报错
+                Loggers.audit_log("user_no_longin_but_run_command", {
                     "user": self.user.name,
                     "run_command": command.name,
-                    "message": "The User is not login,but want run command"
+                    "message": "The User is not longin,but want run command"
                 })  # log
-                raise OSError(f"User {self.user.name} is not Login")
+                raise OSError(f"User {self.user.name} is not Longin")
 
             # 超级有逼格的Java同款的检查器接口╰(￣ω￣ｏ)
             if self.checker.check(self.user, command):  # 通过了
@@ -448,66 +449,66 @@ start_http_server(8000)  # server，启动
 UserPool._pool.extend(User("", "") for _ in range(USER_POOL_INIT_USERS))  # 对象预生成
 
 if __name__ == '__main__':
-    # 测试小程序
-    def fuck():
-        print("fuck teacher and homeworks!!!")
+        # 测试小程序
+        def fuck():
+            print("fuck teacher and homeworks!!!")
 
 
-    C = DefaultChecker()  # check接口
-    PM = Manager()  # 主管理器
-    can_fuck = Permission('can_fuck')  # 权限名
-    fucker = Role('fucker')  # 定义一个角色
-    terminal = Terminal(PM, C)  # 定义一个终端，绑定Check和管理器
-    # I = User('I','password123')  # 定义用户
-    I = UserPool.create_user("I", "password123")  # 对象池加速
-    terminal.set_user(I)  # 设置该终端的用户
-    fuck = Command('fuck', fuck)  # 定义命令
-    PM.config_permission(can_fuck)  # 添加权限can_fuck
-    PM.add_command_to_permission(fuck, can_fuck)  # 设置命令fuck需要权限can_fuck
-    PM.config_role(fucker)  # 添加角色fucker
-    PM.issue(fucker, can_fuck)  # 授权角色fucker有can_fuck权限（相当于用户组）
-    i = 0
-    for_test = False  # 是否重复循环测试
-    try:
-        while True:
-            i = i + 1
+        C = DefaultChecker()  # check接口
+        PM = Manager()  # 主管理器
+        can_fuck = Permission('can_fuck')  # 权限名
+        fucker = Role('fucker')  # 定义一个角色
+        terminal = Terminal(PM, C)  # 定义一个终端，绑定Check和管理器
+        # I = User('I','password123')  # 定义用户
+        I = UserPool.create_user("I", "password123")  # 对象池加速
+        terminal.set_user(I)  # 设置该终端的用户
+        fuck = Command('fuck', fuck)  # 定义命令
+        PM.config_permission(can_fuck)  # 添加权限can_fuck
+        PM.add_command_to_permission(fuck, can_fuck)  # 设置命令fuck需要权限can_fuck
+        PM.config_role(fucker)  # 添加角色fucker
+        PM.issue(fucker, can_fuck)  # 授权角色fucker有can_fuck权限（相当于用户组）
+        i = 0
+        for_test = False  # 是否重复循环测试
+        try:
+            while True:
+                i = i + 1
 
-            I.login('password123')  # 登录
-            Cmd = PM.get_command_object('fuck')  # 没错我就是故意的
-            try:
+                I.longin('password123')  # 登录
+                Cmd = PM.get_command_object('fuck')  # 没错我就是故意的
+                try:
+                    terminal.run(Cmd)
+                except PermissionError as e:
+                    print('TEST OK:   ' + str(e))
+
+                PM.issue(I, can_fuck)  # 授权（对用户）
                 terminal.run(Cmd)
-            except PermissionError as e:
-                print('TEST OK:   ' + str(e))
+                PM.relieve(I, can_fuck)  # 取消授权（对用户）
+                try:
+                    terminal.run(Cmd)  # 报错
+                except PermissionError as e:
+                    print('TEST OK:   ' + str(e))
 
-            PM.issue(I, can_fuck)  # 授权（对用户）
-            terminal.run(Cmd)
-            PM.relieve(I, can_fuck)  # 取消授权（对用户）
-            try:
-                terminal.run(Cmd)  # 报错
-            except PermissionError as e:
-                print('TEST OK:   ' + str(e))
-
-            PM.add_user_to_role(I, "fucker")  # 添加角色到用户
-            terminal.run(Cmd)
-            PM.remove_user_to_role(I, 'fucker')  # 解除
-            try:
+                PM.add_user_to_role(I, "fucker")  # 添加角色到用户
                 terminal.run(Cmd)
-            except PermissionError as e:
-                print('TEST Role OK:   ' + str(e))  # 绝对报错
+                PM.remove_user_to_role(I, 'fucker')  # 解除
+                try:
+                    terminal.run(Cmd)
+                except PermissionError as e:
+                    print('TEST Role OK:   ' + str(e))  # 绝对报错
 
-            PM.add_user_to_role(I, 'fucker')  # 添加角色到用户
-            I.leave()  # 解除登录
-            try:
+                PM.add_user_to_role(I, 'fucker')  # 添加角色到用户
+                I.leave()  # 解除登录
+                try:
+                    terminal.run(Cmd)
+                except OSError as e:
+                    print('TEST Longin OK:   ' + str(e))  # 绝对报错
+
+                I.longin('password123')  # 登录
                 terminal.run(Cmd)
-            except OSError as e:
-                print('TEST Login OK:   ' + str(e))  # 绝对报错
 
-            I.login('password123')  # 登录
-            terminal.run(Cmd)
+                if not for_test:
+                    break
 
-            if not for_test:
-                break
-
-    except KeyboardInterrupt:
-        print("RUN :" + str(i))
+        except KeyboardInterrupt:
+            print("RUN :" + str(i))
 
