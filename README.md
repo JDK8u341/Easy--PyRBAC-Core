@@ -105,7 +105,7 @@
 Prometheus 提供实时监控：
 - `cmd_executed{cmd_name, status}`：命令执行统计
 - `perm_changes{action}`：权限变更次数
-访问 `http://localhost:8000` 查看指标
+访问 `http://localhost:8000` 以查看指标
 
 ---
 
