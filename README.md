@@ -70,13 +70,7 @@
    ```bash
    pip install prometheus_client
    ```
-
-2. **启动服务**
-   ```bash
-   python main.py  # 自动启动Prometheus(8000端口)
-   ```
-
-3. **基础流程示例**
+2. **基础流程示例**
    ```python
    # 初始化组件
    manager = Manager()
