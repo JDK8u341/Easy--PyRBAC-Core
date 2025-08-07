@@ -1,3 +1,4 @@
+from collections import deque
 import uuid
 import threading
 from datetime import datetime
@@ -5,6 +6,11 @@ from prometheus_client import Counter, start_http_server
 import weakref
 import time
 from logger import Loggers
+import time
+from hashlib import sha256
+
+USER_POOL_INIT_USERS = 10  # 预生成对象数量
+CACHE_TIME = 5
 
 # 指标定义一哈
 CMD_EXECUTED = Counter('cmd_executed', '执行的命令数量', ['cmd_name', 'status'])
@@ -19,20 +25,22 @@ class PermissionChecker:
 
 class DefaultChecker(PermissionChecker):
     def check(self, user, command):
-        user_perms = {perm for perm in user.permissions}
-        required_perms = {perm for perm in command.need_permission}
+        # 获取最新权限状态
+        user_perms = user.get_perms()
+
+        required_perms = {p.name for p in command.need_permission}
         return required_perms.issubset(user_perms)
 
 
 # 角色类
 class Role:
-    __slots__ = ["name", "permissions", "users", "__weakref__"]  # 省内存
+    __slots__ = ["name", "permissions", "users"]  # 省内存
 
     def __init__(self, name, *init_permissions):
         if init_permissions is None:
             init_permissions = []  # 如果不传初始化为空列表
         self.permissions = list(init_permissions)  # 重要！不list新建对象的话拿到的是init_permissions的指针（内存地址）,会成元组，亲身体验过QwQ
-        self.users = weakref.WeakSet()  # weakref省内存+保存安全
+        self.users = weakref.WeakSet()  # 用户s
         self.name = name  # 设置名字，没啥好说的，但还是忍不住逼逼两句，写注释写爽了（？）
 
     def add_permission(self, permission):
@@ -45,24 +53,56 @@ class Role:
         self.users.add(user)
 
     def remove_user(self, user):  # 删除用户方法封装
-        self.users.remove(user)
+        self.users.discard(user)
+
+
+class UserPool:
+    _pool = deque(maxlen=1000)
+    _lock = threading.Lock()
+
+    @classmethod
+    def create_user(cls, name, password, role=None):
+        with cls._lock:
+            if cls._pool:
+                user = cls._pool.popleft()
+                user.__init__(name, password, role)  # 调用原有初始化方法
+                return user
+            return User(name, password, role)
+
+    @classmethod
+    def recycle_user(cls, user):
+        with cls._lock:
+            user.name = None
+            user.role = None
+            user.password = ''
+            user.permissions = weakref.WeakSet()
+            user.is_longin = False  # 清空减少占用
+            cls._pool.append(user)  # FIFO保证不区别对待，没得阶级固化（doge）
 
 
 class User:
-    __slots__ = ["name", "role", "permissions","password","is_login","__weakref__"]
+    __slots__ = ["name", "role", "permissions", "password", "_perm_cache", "_cache_time", "is_login", "__weakref__"]
 
-    def __init__(self, name: str,password:str, role=None):
+    def __init__(self, name: str, password: str, role=None):
+        hash_object = sha256()
+        hash_object.update(password.encode('utf-8'))  # 保密hash存储
+        self.password = hash_object.hexdigest()
         self.name = name  # 设置用户名
         self.role = role  # 设置角色，默认没有（None）
-        self.permissions = weakref.WeakSet()  # weakref省内存+防泄漏
-        self.password = hash(password)  #保密hash存储
+        self.permissions = weakref.WeakSet()  # 存权限的
         self.is_login = False
+        self._perm_cache = None  # 权限缓存
+        self._cache_time = 0  # 缓存时间戳
         if not role is None:  # 是None还加毛线
             for j in role.permissions:
                 self.permissions.add(j)  # 添加该角色有的权限
+            role.users.add(self)  # 主动添加到角色
 
-    def login(self,password):   #登录
-        if hash(password) == self.password:
+    def login(self, password):  # 登录
+        hash_object = sha256()
+        hash_object.update(password.encode('utf-8'))  # 保密hash存储
+        if hash_object.hexdigest() == self.password:
+            self.update()
             self.is_login = True
             Loggers.audit_log("user_login", {
                 "user": self.name,
@@ -77,8 +117,7 @@ class User:
             })  # 失败也报log
 
     def leave(self):
-        self.is_login = False   #离开自动状态处理
-
+        self.is_login = False  # 离开自动状态处理
 
     def update(self):
         self.permissions = weakref.WeakSet()  # 重置权限列表
@@ -95,6 +134,33 @@ class User:
     def set_role(self, role):  # 设置role方法封装
         self.role = role
 
+    def delete(self):
+        if self.role:
+            self.role.remove_user(self)
+            # 2. 解除权限关联
+        for perm in list(self.permissions.values()):
+            if self in perm.related_users:
+                perm.remove(self)
+        UserPool.recycle_user(self)
+
+    def get_perms(self) -> set:
+        # 缓存
+        if time.time() - self._cache_time < CACHE_TIME and self._perm_cache:
+            return self._perm_cache
+
+        perms = {p.name for p in self.permissions}
+        if self.role:
+            perms |= {p.name for p in self.role.permissions}
+
+        self._perm_cache = perms
+        self._cache_time = time.time()
+        return perms
+
+    def __del__(self):  # 如果你非得删了的话
+        """不建议直接删了,建议您用delete方法复用对象以提高性能"""
+        if self.role:
+            self.role.remove_user(self)  # 清理
+
 
 class Command:
     __slots__ = ["name", "func", "need_permission", "last_executed", "_last_user", "__weakref__"]
@@ -102,7 +168,7 @@ class Command:
     def __init__(self, name, func):
         self.name = name  # 设置命令名字
         self.func = func  # 设置调用的函数
-        self.need_permission = []  # 本命令要的权限
+        self.need_permission = set()  # 本命令要的权限
         self.last_executed = None  # 这俩记录
         self._last_user = None  # 用的
 
@@ -158,12 +224,12 @@ class Terminal:  # 终端类
             # 临时记录一下(●'◡'●)
             command._last_user = self.user.name
 
-            if not self.user.is_login:  #没登录也报错
+            if not self.user.is_login:  # 没登录也报错
                 Loggers.audit_log("user_no_login_but_run_command", {
                     "user": self.user.name,
-                    "run_command":command.name,
+                    "run_command": command.name,
                     "message": "The User is not login,but want run command"
-                })  #log
+                })  # log
                 raise OSError(f"User {self.user.name} is not Login")
 
             # 超级有逼格的Java同款的检查器接口╰(￣ω￣ｏ)
@@ -172,7 +238,8 @@ class Terminal:  # 终端类
                 CMD_EXECUTED.labels(command.name, 'success').inc()  # 顺便记录
             else:
                 # 否则，嘿嘿嘿┗|｀O′|┛（--老子直接TM给你拦下来）
-                missing_perms = set(p.name for p in command.need_permission) - set(p.name for p in self.user.permissions)  # 还提示你少了哪些权限，这贴心度不给个五星好评对不起我ヾ(≧▽≦*)o
+                missing_perms = set(p.name for p in command.need_permission) - set(
+                    p.name for p in self.user.permissions)  # 还提示你少了哪些权限，这贴心度不给个五星好评对不起我ヾ(≧▽≦*)o
                 Loggers.audit_log("permission_denied", {
                     "user": self.user.name,
                     "command": command.name,
@@ -185,14 +252,15 @@ class Terminal:  # 终端类
 
 
 class Permission:  # 权限类，你问我为啥不用str，因为清晰好用还多送你uuid安全大礼包！
-    __slots__ = ["name", "__uuid", "command_refs", "created_at", "__weakref__"]
+    __slots__ = ["name", "__uuid", "command_refs", "created_at", "related_users", "__weakref__"]
 
     def __init__(self, name):
         self.name = str(name)  # 我告诉你，有些别有用心之人啊，就喜欢搞偷袭
         self.__uuid = uuid.uuid4()  # UUID安全BIG礼包！让你吃到爽
         # ref省内存我说了多少遍了，算了忘了o(〃＾▽＾〃)o
-        self.command_refs = weakref.WeakSet()  # 绑定的命令的ref
+        self.command_refs = weakref.WeakSet()  # command弱引用
         self.created_at = datetime.now()  # 创建时间啊啊啊
+        self.related_users = weakref.WeakSet()  # 绑定的用户
         Loggers.audit_log("permission_created", {
             "permission": self.name,
             "uuid": str(self.__uuid)
@@ -222,6 +290,12 @@ class Permission:  # 权限类，你问我为啥不用str，因为清晰好用�
     def get_commands(self):
         return list(self.command_refs)
 
+    def add_user(self, user):  # 添加绑定的用户的方法
+        self.related_users.add(user)
+
+    def remove_user(self, user):  # 移除绑定的用户的方法
+        self.related_users.discard(user)
+
     # 报错的时候找教程改的，我也不知道为什么QwQ
     def __hash__(self):
         return hash(self.name)
@@ -231,9 +305,9 @@ class Manager:  # 主管理器！
     __slots__ = ["permissions", "roles", "commands", "__weakref__"]
 
     def __init__(self):  # 初始化一下
-        self.permissions = weakref.WeakValueDictionary()  # 又是ref，字典款ref，用来存需要管理的权限，你值得拥有(　o=^•ェ•)o　┏━┓
-        self.roles = weakref.WeakValueDictionary()  # 存角色的
-        self.commands = weakref.WeakValueDictionary()  # 存命令的
+        self.permissions = {}  # 改为普通dict
+        self.roles = {}  # 存角色的
+        self.commands = {}  # 存命令的
         Loggers.audit_log("system_event", {"event": "permission_manager_initialized"})  # 又TM写log
 
     def config_permission(self, permission):  # 配置一个权限
@@ -243,15 +317,15 @@ class Manager:  # 主管理器！
             "system": "global"
         })  # 还是写log
 
-    def add_command(self, command, permission):
+    def add_command_to_permission(self, command, permission):
         # 通过权限名获取实际对象
         perm_obj = self.permissions.get(permission.name)
         if perm_obj:  # 有才处理嘛╰(￣ω￣ｏ)
             perm_obj.add_command(command)  # 绑定一哈
-            command.need_permission.append(perm_obj)  # 双向奔赴（doge）
+            command.need_permission.add(perm_obj)  # 双向奔赴（doge）
         self.commands[command.name] = command  # 记录命令
 
-    def remove_command(self, command, permission):  # 移除绑定
+    def remove_command_to_permission(self, command, permission):  # 移除绑定
         # 通过权限名获取实际对象
         perm_obj = self.permissions.get(permission.name)
         if perm_obj:  # 没有处理毛线
@@ -273,6 +347,12 @@ class Manager:  # 主管理器！
         role.add_user(user)  # 添加一哈
         user.set_role(role)  # 双向奔赴
         user.update()  # 更新
+        Loggers.audit_log("set_user_role", {
+            "user": user.name,
+            "role": role.name,
+            "permissions": list(i.name for i in user.permissions),
+            "granted_by": "system"
+        })  # 提log
 
     def remove_user_to_role(self, user, role_name):
         role = self.roles.get(role_name)  # 获取一哈
@@ -280,6 +360,11 @@ class Manager:  # 主管理器！
             role.remove_user(user)
         user.set_role(None)  # 设成None
         user.update()  # 更新哈状态
+        Loggers.audit_log("reset_user_role", {
+            "user": user.name,
+            "role": role.name,
+            "granted_by": "system"
+        })  # 提log
 
     def issue(self, user_or_role, permission):  # 授权
         # try包裹防报错
@@ -288,12 +373,13 @@ class Manager:  # 主管理器！
             if not perm_obj:  # 如果没有就报错
                 raise ValueError(f"Permission {permission.name} not found")
             if isinstance(user_or_role, User):  # User执行User操作
-                user_or_role.add_permission(perm_obj)  # add
                 Loggers.audit_log("permission_granted_user", {
                     "user": user_or_role.name,
                     "permission": permission.name,
                     "granted_by": "system"
                 })  # 提log
+                user_or_role.add_permission(perm_obj)  # add
+                permission.add_user(user_or_role)
             elif isinstance(user_or_role, Role):  # Role执行role操作
                 user_or_role.add_permission(perm_obj)  # add
                 Loggers.audit_log("permission_granted_role", {
@@ -304,6 +390,7 @@ class Manager:  # 主管理器！
                 # 动态更新User状态
                 for user in user_or_role.users:
                     user.update()  # 每个都更新一遍
+                    permission.add_user(user)
             PERM_CHANGES.labels('grant').inc()  # 提交一哈
         except Exception as e:
             Loggers.audit_log("permission_error", {
@@ -320,6 +407,7 @@ class Manager:  # 主管理器！
             if perm_obj and perm_obj in user_or_role.permissions:
                 if isinstance(user_or_role, User):
                     user_or_role.remove_permission(perm_obj)  # 只有这里
+                    permission.remove_user(user_or_role)
                     Loggers.audit_log("permission_revoked_user", {
                         "user": user_or_role.name,
                         "permission": permission.name,
@@ -333,9 +421,10 @@ class Manager:  # 主管理器！
                         "role": permission.name,
                         "revoked_by": "system"
                     })  # 还有log不同
-                    # 动态更新User状态
+                    # 动态更新User状态s
                     for user in user_or_role.users:
                         user.update()
+                        permission.remove_user(user_or_role)
                 PERM_CHANGES.labels('revoke').inc()
         except Exception as e:
             Loggers.audit_log("permission_error", {
@@ -356,6 +445,7 @@ class Manager:  # 主管理器！
 
 
 start_http_server(8000)  # server，启动
+UserPool._pool.extend(User("", "") for _ in range(USER_POOL_INIT_USERS))  # 对象预生成
 
 if __name__ == '__main__':
     # 测试小程序
@@ -368,20 +458,21 @@ if __name__ == '__main__':
     can_fuck = Permission('can_fuck')  # 权限名
     fucker = Role('fucker')  # 定义一个角色
     terminal = Terminal(PM, C)  # 定义一个终端，绑定Check和管理器
-    I = User('I','fuck')  # 定义用户
+    # I = User('I','password123')  # 定义用户
+    I = UserPool.create_user("I", "password123")  # 对象池加速
     terminal.set_user(I)  # 设置该终端的用户
     fuck = Command('fuck', fuck)  # 定义命令
     PM.config_permission(can_fuck)  # 添加权限can_fuck
-    PM.add_command(fuck, can_fuck)  # 设置命令fuck需要权限can_fuck
+    PM.add_command_to_permission(fuck, can_fuck)  # 设置命令fuck需要权限can_fuck
     PM.config_role(fucker)  # 添加角色fucker
-    PM.issue(fucker,can_fuck )  # 授权角色fucker有can_fuck权限（相当于用户组）
+    PM.issue(fucker, can_fuck)  # 授权角色fucker有can_fuck权限（相当于用户组）
     i = 0
     for_test = False  # 是否重复循环测试
     try:
         while True:
             i = i + 1
 
-            I.login('fuck') #登录
+            I.login('password123')  # 登录
             Cmd = PM.get_command_object('fuck')  # 没错我就是故意的
             try:
                 terminal.run(Cmd)
@@ -405,13 +496,13 @@ if __name__ == '__main__':
                 print('TEST Role OK:   ' + str(e))  # 绝对报错
 
             PM.add_user_to_role(I, 'fucker')  # 添加角色到用户
-            I.leave()       #解除登录
+            I.leave()  # 解除登录
             try:
                 terminal.run(Cmd)
             except OSError as e:
                 print('TEST Login OK:   ' + str(e))  # 绝对报错
 
-            I.login('fuck')  # 登录
+            I.login('password123')  # 登录
             terminal.run(Cmd)
 
             if not for_test:
