@@ -58,7 +58,7 @@ class Role:
 
 class UserPool:
     _pool = deque(maxlen=1000)
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     @classmethod
     def create_user(cls, name, password, role=None):
