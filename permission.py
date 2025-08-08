@@ -91,8 +91,6 @@ class User:
         self._perm_cache = None  # 权限缓存
         self._cache_time = 0  # 缓存时间戳
         if not role is None:  # 是None还加毛线
-            for j in role.permissions:
-                self.permissions.add(j)  # 添加该角色有的权限
             role.users.add(self)  # 主动添加到角色
 
     def login(self, password):  # 登录
@@ -117,10 +115,6 @@ class User:
         self.is_login = False  # 离开自动状态处理
 
     def update(self):
-        self.permissions = weakref.WeakSet()  # 重置权限列表
-        if not self.role is None:  # 虽然前面说了，但我还是忍不住再说一遍：是None还加毛线
-            for j in self.role.permissions:
-                self.permissions.add(j)  # 添加该角色有的权限，懂得都懂（doge）
         self._perm_cache = None
         self._cache_time = 0        #更新缓存
     def add_permission(self, permission):  # add方法封装，方便外部调用
@@ -236,14 +230,13 @@ class Terminal:  # 终端类
                 CMD_EXECUTED.labels(command.name, 'success').inc()  # 顺便记录
             else:
                 # 否则，嘿嘿嘿┗|｀O′|┛（--老子直接TM给你拦下来）
-                missing_perms = set(p.name for p in command.need_permission) - set(
-                    p.name for p in self.user.permissions)  # 还提示你少了哪些权限，这贴心度不给个五星好评对不起我ヾ(≧▽≦*)o
+                missing_perms = set(p.name for p in command.need_permission) - self.user.get_perms() # 还提示你少了哪些权限，这贴心度不给个五星好评对不起我ヾ(≧▽≦*)o
                 Loggers.audit_log("permission_denied", {
                     "user": self.user.name,
                     "command": command.name,
                     "missing_permissions": list(missing_perms),
                     "required_permissions": [p.name for p in command.need_permission],
-                    "user_permissions": [p.name for p in self.user.permissions]
+                    "user_permissions": list(self.user.get_perms())
                 })  # log报一下
                 CMD_EXECUTED.labels(command.name, 'denied').inc()  # 再记录
                 raise PermissionError(f"Missing required permissions: {', '.join(missing_perms)}")  # 报错
@@ -377,7 +370,7 @@ class Manager:  # 主管理器！
                 Loggers.audit_log("permission_granted_user", {
                     "user": user_or_role.name,
                     "permission": permission.name,
-                    "user_permissions": list(i.name for i in user_or_role.permissions),
+                    "user_permissions": list(user_or_role.get_perms()),
                     "granted_by": "system"
                 })  # 提log
             elif isinstance(user_or_role, Role):  # Role执行role操作
@@ -413,7 +406,7 @@ class Manager:  # 主管理器！
                     Loggers.audit_log("permission_revoked_user", {
                         "user": user_or_role.name,
                         "permission": permission.name,
-                        "user_permissions":list(i.name for i in user_or_role.permissions),
+                        "user_permissions":list(user_or_role.get_perms()),
                         "revoked_by": "system"
                     })
                     PERM_CHANGES.labels('revoke').inc()
