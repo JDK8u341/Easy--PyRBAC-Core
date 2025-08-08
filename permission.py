@@ -7,9 +7,11 @@ import weakref
 from logger import Loggers
 import time
 from hashlib import sha256
+from functools import lru_cache
+import os
 
 USER_POOL_INIT_USERS = 100  # 预生成对象数量
-CACHE_TIME = 5
+
 
 # 指标定义一哈
 CMD_EXECUTED = Counter('cmd_execute', '执行的命令数量', ['cmd_name', 'status'])
@@ -35,13 +37,15 @@ class DefaultChecker(PermissionChecker):
 class Role:
     __slots__ = ["name", "permissions", "users"]  # 省内存
 
-    def __init__(self, name, *init_permissions):
-        self.permissions = list(init_permissions) #直接转列表
+    def __init__(self, name,*init_permissions,parent=None):
+        self.permissions = set(init_permissions) #直接转set
         self.users = weakref.WeakSet()  # 用户s
         self.name = name  # 设置名字，没啥好说的，但还是忍不住逼逼两句，写注释写爽了（？）
+        if parent:
+            self.permissions |= parent.permission # 递归获取
 
     def add_permission(self, permission):
-        self.permissions.append(permission)  # add方法封装，方便外部调用
+        self.permissions.add(permission)  # add方法封装，方便外部调用
 
     def remove_permission(self, permission):  # remove方法封装，方便外部调用
         self.permissions.remove(permission)
@@ -78,32 +82,34 @@ class UserPool:
 
 
 class User:
-    __slots__ = ["name", "role", "permissions", "password", "_perm_cache", "_cache_time", "is_login", "__weakref__"]
+    __slots__ = ["name", "role", "permissions", "__password", "_perm_cache","__weakref__","_is_login","_login_time","__salt"]
 
     def __init__(self, name: str, password: str, role=None):
         hash_object = sha256()
-        hash_object.update(password.encode('utf-8'))  # 保密hash存储
-        self.password = hash_object.hexdigest()
+        self.__salt = os.urandom(24)
+        hash_object.update(password.encode('utf-8')+self.__salt)  # 保密hash存储
+        self.__password = hash_object.hexdigest()
         self.name = name  # 设置用户名
         self.role = role  # 设置角色，默认没有（None）
         self.permissions = weakref.WeakSet()  # 存权限的
-        self.is_login = False
+        self._is_login = False
         self._perm_cache = None  # 权限缓存
-        self._cache_time = 0  # 缓存时间戳
+        self._login_time = time.time()  # 登陆时间戳
         if not role is None:  # 是None还加毛线
             role.users.add(self)  # 主动添加到角色
 
     def login(self, password):  # 登录
         hash_object = sha256()
-        hash_object.update(password.encode('utf-8'))  # 保密hash存储
-        if hash_object.hexdigest() == self.password:
+        hash_object.update(password.encode('utf-8')+self.__salt)  # 保密hash存储
+        if hash_object.hexdigest() == self.__password:
             self.update()
-            self.is_login = True
+            self._is_login = True
             Loggers.audit_log("user_login", {
                 "user": self.name,
                 "status": "success",
                 "message": "User login"
             })  # 成功报log
+            self._login_time = time.time()
         else:
             Loggers.audit_log("user_login", {
                 "user": self.name,
@@ -112,11 +118,10 @@ class User:
             })  # 失败也报log
 
     def leave(self):
-        self.is_login = False  # 离开自动状态处理
+        self._is_login = False  # 离开自动状态处理
 
     def update(self):
-        self._perm_cache = None
-        self._cache_time = 0        #更新缓存
+        self.get_perms.cache_clear()  #更新缓存
     def add_permission(self, permission):  # add方法封装，方便外部调用
         self.permissions.add(permission)
 
@@ -135,18 +140,19 @@ class User:
                 perm.remove(self)
         UserPool.recycle_user(self)
 
+    @lru_cache(maxsize=1)
     def get_perms(self) -> set:
-        # 缓存
-        if time.time() - self._cache_time < CACHE_TIME and self._perm_cache:
-            return self._perm_cache
-
         perms = {p.name for p in self.permissions}
         if self.role:
             perms |= {p.name for p in self.role.permissions}
 
         self._perm_cache = perms
-        self._cache_time = time.time()
         return perms
+
+    @property
+    def is_login(self):
+        return self._is_login and (time.time() - self._login_time) <= 1800
+
 
     def __del__(self):  # 如果你非得删了的话
         """不建议直接删了,建议您用delete方法复用对象以提高性能"""
@@ -298,7 +304,7 @@ class Manager:  # 主管理器！
     def __init__(self):  # 初始化一下
         self.permissions = {}  # 改为普通dict
         self.roles = {}  # 存角色的
-        self.commands = {}  # 存命令的
+        self.commands = weakref.WeakValueDictionary()  # 存命令的
         Loggers.audit_log("system_event", {"event": "permission_manager_initialized"})  # 又TM写log
 
     def config_permission(self, permission):  # 配置一个权限
@@ -308,17 +314,13 @@ class Manager:  # 主管理器！
             "system": "global"
         })  # 还是写log
 
-    def add_command_to_permission(self, command, permission):
-        # 通过权限名获取实际对象
-        perm_obj = self.permissions.get(permission.name)
+    def add_command_to_permission(self, command, perm_obj):
         if perm_obj:  # 有才处理嘛╰(￣ω￣ｏ)
             perm_obj.add_command(command)  # 绑定一哈
             command.need_permission.add(perm_obj)  # 双向奔赴（doge）
         self.commands[command.name] = command  # 记录命令
 
-    def remove_command_to_permission(self, command, permission):  # 移除绑定
-        # 通过权限名获取实际对象
-        perm_obj = self.permissions.get(permission.name)
+    def remove_command_to_permission(self, command, perm_obj):  # 移除绑定
         if perm_obj:  # 没有处理毛线
             perm_obj.remove_command(command)  # 移除
             if perm_obj in command.need_permission:  # 双层校验包你平安
