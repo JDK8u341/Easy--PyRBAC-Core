@@ -4,7 +4,6 @@ import threading
 from datetime import datetime
 from prometheus_client import Counter, start_http_server
 import weakref
-import time
 from logger import Loggers
 import time
 from hashlib import sha256
@@ -37,9 +36,7 @@ class Role:
     __slots__ = ["name", "permissions", "users"]  # 省内存
 
     def __init__(self, name, *init_permissions):
-        if init_permissions is None:
-            init_permissions = []  # 如果不传初始化为空列表
-        self.permissions = list(init_permissions)  # 重要！不list新建对象的话拿到的是init_permissions的指针（内存地址）,会成元组，亲身体验过QwQ
+        self.permissions = list(init_permissions) #直接转列表
         self.users = weakref.WeakSet()  # 用户s
         self.name = name  # 设置名字，没啥好说的，但还是忍不住逼逼两句，写注释写爽了（？）
 
@@ -76,12 +73,12 @@ class UserPool:
             user.role = None
             user.password = ''
             user.permissions = weakref.WeakSet()
-            user.is_longin = False  # 清空减少占用
+            user.is_login = False  # 清空减少占用
             cls._pool.append(user)  # FIFO保证不区别对待，没得阶级固化（doge）
 
 
 class User:
-    __slots__ = ["name", "role", "permissions", "password", "_perm_cache", "_cache_time", "is_longin", "__weakref__"]
+    __slots__ = ["name", "role", "permissions", "password", "_perm_cache", "_cache_time", "is_login", "__weakref__"]
 
     def __init__(self, name: str, password: str, role=None):
         hash_object = sha256()
@@ -90,7 +87,7 @@ class User:
         self.name = name  # 设置用户名
         self.role = role  # 设置角色，默认没有（None）
         self.permissions = weakref.WeakSet()  # 存权限的
-        self.is_longin = False
+        self.is_login = False
         self._perm_cache = None  # 权限缓存
         self._cache_time = 0  # 缓存时间戳
         if not role is None:  # 是None还加毛线
@@ -98,26 +95,26 @@ class User:
                 self.permissions.add(j)  # 添加该角色有的权限
             role.users.add(self)  # 主动添加到角色
 
-    def longin(self, password):  # 登录
+    def login(self, password):  # 登录
         hash_object = sha256()
         hash_object.update(password.encode('utf-8'))  # 保密hash存储
         if hash_object.hexdigest() == self.password:
             self.update()
-            self.is_longin = True
-            Loggers.audit_log("user_longin", {
+            self.is_login = True
+            Loggers.audit_log("user_login", {
                 "user": self.name,
                 "status": "success",
-                "message": "User longin"
+                "message": "User login"
             })  # 成功报log
         else:
-            Loggers.audit_log("user_longin", {
+            Loggers.audit_log("user_login", {
                 "user": self.name,
                 "status": "error",
-                "message": "User longin"
+                "message": "User login"
             })  # 失败也报log
 
     def leave(self):
-        self.is_longin = False  # 离开自动状态处理
+        self.is_login = False  # 离开自动状态处理
 
     def update(self):
         self.permissions = weakref.WeakSet()  # 重置权限列表
@@ -208,7 +205,7 @@ class Terminal:  # 终端类
         self.user = user  # 平平无奇的设置(*/ω＼*)
         self.bind_time = datetime.now()  # 登寡郎，啊不对，登录时间设置q(≧▽≦q)
         Loggers.audit_log("user_session", {
-            "event": "longin",
+            "event": "login",
             "user": user.name,
             "permissions": [p.name for p in user.permissions]
         })  # 报log啊啊啊啊
@@ -225,13 +222,13 @@ class Terminal:  # 终端类
             # 临时记录一下(●'◡'●)
             command._last_user = self.user.name
 
-            if not self.user.is_longin:  # 没登录也报错
-                Loggers.audit_log("user_no_longin_but_run_command", {
+            if not self.user.is_login:  # 没登录也报错
+                Loggers.audit_log("user_no_login_but_run_command", {
                     "user": self.user.name,
                     "run_command": command.name,
-                    "message": "The User is not longin,but want run command"
+                    "message": "The User is not login,but want run command"
                 })  # log
-                raise OSError(f"User {self.user.name} is not Longin")
+                raise OSError(f"User {self.user.name} is not Login")
 
             # 超级有逼格的Java同款的检查器接口╰(￣ω￣ｏ)
             if self.checker.check(self.user, command):  # 通过了
@@ -299,7 +296,7 @@ class Permission:  # 权限类，你问我为啥不用str，因为清晰好用�
 
     # 报错的时候找教程改的，我也不知道为什么QwQ
     def __hash__(self):
-        return hash(self.name)
+        return hash((self.name, self.__uuid))
 
 
 class Manager:  # 主管理器！
@@ -374,24 +371,27 @@ class Manager:  # 主管理器！
             if not perm_obj:  # 如果没有就报错
                 raise ValueError(f"Permission {permission.name} not found")
             if isinstance(user_or_role, User):  # User执行User操作
+                user_or_role.add_permission(perm_obj)  # add
+                permission.add_user(user_or_role)
+                user_or_role.update()
                 Loggers.audit_log("permission_granted_user", {
                     "user": user_or_role.name,
                     "permission": permission.name,
+                    "user_permissions": list(i.name for i in user_or_role.permissions),
                     "granted_by": "system"
                 })  # 提log
-                user_or_role.add_permission(perm_obj)  # add
-                permission.add_user(user_or_role)
             elif isinstance(user_or_role, Role):  # Role执行role操作
                 user_or_role.add_permission(perm_obj)  # add
-                Loggers.audit_log("permission_granted_role", {
-                    "role": user_or_role.name,
-                    "permission": permission.name,
-                    "granted_by": "system"
-                })  # 提log
                 # 动态更新User状态
                 for user in user_or_role.users:
                     user.update()  # 每个都更新一遍
                     permission.add_user(user)
+                Loggers.audit_log("permission_granted_role", {
+                    "role": user_or_role.name,
+                    "permission": permission.name,
+                    "role_permissions": list(i.name for i in user_or_role.permissions),
+                    "granted_by": "system"
+                })  # 提log
             PERM_CHANGES.labels('grant').inc()  # 提交一哈
         except Exception as e:
             Loggers.audit_log("permission_error", {
@@ -409,23 +409,26 @@ class Manager:  # 主管理器！
                 if isinstance(user_or_role, User):
                     user_or_role.remove_permission(perm_obj)  # 只有这里
                     permission.remove_user(user_or_role)
+                    user_or_role.update()
                     Loggers.audit_log("permission_revoked_user", {
                         "user": user_or_role.name,
                         "permission": permission.name,
+                        "user_permissions":list(i.name for i in user_or_role.permissions),
                         "revoked_by": "system"
                     })
                     PERM_CHANGES.labels('revoke').inc()
                 elif isinstance(user_or_role, Role):
                     user_or_role.permissions.remove(perm_obj)  # 和这里
-                    Loggers.audit_log("permission_revoked_role", {
-                        "user": user_or_role.name,
-                        "role": permission.name,
-                        "revoked_by": "system"
-                    })  # 还有log不同
                     # 动态更新User状态s
                     for user in user_or_role.users:
                         user.update()
-                        permission.remove_user(user_or_role)
+                        permission.remove_user(user)
+                    Loggers.audit_log("permission_revoked_role", {
+                        "role": user_or_role.name,
+                        "permissions":permission.name,
+                        "role_permissions":list(i.name for i in user_or_role.permissions),
+                        "revoked_by": "system"
+                    })  # 还有log不同
                 PERM_CHANGES.labels('revoke').inc()
         except Exception as e:
             Loggers.audit_log("permission_error", {
@@ -436,14 +439,22 @@ class Manager:  # 主管理器！
             }, level="ERROR")
 
     def get_command_object(self, command_name):  # 辅助函数，获取对象用
-        return self.commands.get(command_name)
+        try:
+            return self.commands.get(command_name)
+        except IndexError:
+            return None
 
     def get_role_object(self, role_name):  # 一样的
-        return self.roles.get(role_name)
+        try:
+            return self.roles.get(role_name)
+        except IndexError:
+            return None
 
-    def get_permission_object(self, permission_name):  # 还是一样的
-        return self.permissions.get(permission_name)
-
+    def get_permission_object(self, permission_name):   # 还是一样的
+        try:
+            return self.permissions.get(permission_name)
+        except IndexError:
+            return None
 
 start_http_server(8000)  # server，启动
 UserPool._pool.extend(User("", "") for _ in range(USER_POOL_INIT_USERS))  # 对象预生成
@@ -473,7 +484,7 @@ if __name__ == '__main__':
             while True:
                 i = i + 1
 
-                I.longin('password123')  # 登录
+                I.login('password123')  # 登录
                 Cmd = PM.get_command_object('fuck')  # 没错我就是故意的
                 try:
                     terminal.run(Cmd)
@@ -501,9 +512,9 @@ if __name__ == '__main__':
                 try:
                     terminal.run(Cmd)
                 except OSError as e:
-                    print('TEST Longin OK:   ' + str(e))  # 绝对报错
+                    print('TEST Login OK:   ' + str(e))  # 绝对报错
 
-                I.longin('password123')  # 登录
+                I.login('password123')  # 登录
                 terminal.run(Cmd)
 
                 if not for_test:
