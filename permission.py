@@ -75,9 +75,9 @@ class UserPool:
         with cls._lock:
             user.name = None
             user.role = None
-            user._User__password = None
-            user._User__salt = None
-            user._User__uuid = None
+            user._password = None
+            user._salt = None
+            user._uuid = None
             user.permissions = weakref.WeakSet()
             user.is_login = False
             user._perm_cache = None # 清空减少占用
@@ -88,27 +88,27 @@ class UserPool:
 
 
 class User:
-    __slots__ = ["name", "role", "permissions", "__password", "_perm_cache","__weakref__","_is_login","_login_time","__salt","__uuid"]
+    __slots__ = ["name", "role", "permissions", "_password", "_perm_cache","__weakref__","_is_login","_login_time","_salt","_uuid"]
 
     def __init__(self, name: str, password: str, role=None):
         hash_object = sha256()
-        self.__salt = os.urandom(24)
-        hash_object.update(password.encode('utf-8')+self.__salt)  # 保密hash存储
-        self.__password = hash_object.hexdigest()
+        self._salt = os.urandom(24)
+        hash_object.update(password.encode('utf-8')+self._salt)  # 保密hash存储
+        self._password = hash_object.hexdigest()
         self.name = name  # 设置用户名
         self.role = role  # 设置角色，默认没有（None）
         self.permissions = weakref.WeakSet()  # 存权限的
         self._is_login = False
         self._perm_cache = None  # 权限缓存
         self._login_time = time.time()  # 登陆时间戳
-        self.__uuid = uuid.uuid4()
+        self._uuid = uuid.uuid4()
         if not role is None:  # 是None还加毛线
             role.users.add(self)  # 主动添加到角色
 
     def login(self, password):  # 登录
         hash_object = sha256()
-        hash_object.update(password.encode('utf-8')+self.__salt)  # 保密hash存储
-        if hash_object.hexdigest() == self.__password:
+        hash_object.update(password.encode('utf-8')+self._salt)  # 保密hash存储
+        if hash_object.hexdigest() == self._password:
             self.update()
             self._is_login = True
             Loggers.audit_log("user_login", {
@@ -473,7 +473,7 @@ if __name__ == '__main__':
         fucker = Role('fucker')  # 定义一个角色
         terminal = Terminal(PM, C)  # 定义一个终端，绑定Check和管理器
         # I = User('I','password123')  # 定义用户
-        I = UserPool.create_user("I", "password123")  # 对象池加速
+        I = UserPool.create_user("I", password="password123")  # 对象池加速
         terminal.set_user(I)  # 设置该终端的用户
         fuck = Command('fuck', fuck)  # 定义命令
         PM.config_permission(can_fuck)  # 添加权限can_fuck
