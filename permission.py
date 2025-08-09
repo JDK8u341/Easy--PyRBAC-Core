@@ -75,8 +75,9 @@ class UserPool:
         with cls._lock:
             user.name = None
             user.role = None
-            user.__password = None
-            user.__salt = None
+            user._User__password = None
+            user._User__salt = None
+            user._User__uuid = None
             user.permissions = weakref.WeakSet()
             user.is_login = False
             user._perm_cache = None # 清空减少占用
@@ -84,8 +85,10 @@ class UserPool:
             cls._pool.append(user)  # FIFO保证不区别对待，没得阶级固化（doge）
 
 
+
+
 class User:
-    __slots__ = ["name", "role", "permissions", "__password", "_perm_cache","__weakref__","_is_login","_login_time","__salt"]
+    __slots__ = ["name", "role", "permissions", "__password", "_perm_cache","__weakref__","_is_login","_login_time","__salt","__uuid"]
 
     def __init__(self, name: str, password: str, role=None):
         hash_object = sha256()
@@ -98,6 +101,7 @@ class User:
         self._is_login = False
         self._perm_cache = None  # 权限缓存
         self._login_time = time.time()  # 登陆时间戳
+        self.__uuid = uuid.uuid4()
         if not role is None:  # 是None还加毛线
             role.users.add(self)  # 主动添加到角色
 
