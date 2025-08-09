@@ -75,9 +75,12 @@ class UserPool:
         with cls._lock:
             user.name = None
             user.role = None
-            user.password = ''
+            user.__password = None
+            user.__salt = None
             user.permissions = weakref.WeakSet()
-            user.is_login = False  # 清空减少占用
+            user.is_login = False
+            user._perm_cache = None # 清空减少占用
+            user._login_time = None
             cls._pool.append(user)  # FIFO保证不区别对待，没得阶级固化（doge）
 
 
