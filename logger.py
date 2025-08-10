@@ -37,4 +37,3 @@ class Logger:
             else:
                 self.logger.error(json.dumps(log_entry))
 
-Loggers = Logger('security_audit','./security.json.log')  # 不想改了就直接初始化了。。。
