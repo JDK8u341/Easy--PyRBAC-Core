@@ -11,7 +11,7 @@ from functools import lru_cache
 import os
 
 USER_POOL_INIT_USERS = 100  # 预生成对象数量
-
+POOL_MAX_LEN = 1000 #最多对象大小 
 
 # 指标定义一哈
 CMD_EXECUTED = Counter('cmd_execute', '执行的命令数量', ['cmd_name', 'status'])
@@ -58,7 +58,7 @@ class Role:
 
 
 class UserPool:
-    _pool = deque(maxlen=1000)
+    _pool = deque(maxlen=POOL_MAX_LEN)
     _lock = threading.RLock()
 
     @classmethod
